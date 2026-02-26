@@ -39,7 +39,7 @@ Under the surface it is cryptographically serious:
 ### From source
 
 ```bash
-git clone https://github.com/dendec/dendec
+git clone https://github.com/rudv-ar/dendec
 cd dendec
 cargo build --release
 ```

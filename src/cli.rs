@@ -1,10 +1,11 @@
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 /// dendec — DNA Encode/Decode
 ///
-/// Encodes arbitrary Unicode text into a DNA base sequence (A/T/G/C)
-/// and decodes it back. All data is password-protected with modern
-/// authenticated encryption (ChaCha20-Poly1305 + Argon2id).
+/// Encodes arbitrary Unicode text or raw binary files into a DNA base
+/// sequence (A/T/G/C) and decodes them back. All data is password-protected
+/// with modern authenticated encryption (ChaCha20-Poly1305 + Argon2id).
 #[derive(Parser, Debug)]
 #[command(
     name = "dendec",
@@ -20,27 +21,51 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
-    /// Encode Unicode text into an encrypted DNA sequence
+    /// Encode text or a file into an encrypted DNA sequence
     ///
-    /// You will be prompted to enter and confirm a password.
-    /// The output is a continuous A/T/G/C string that can only be
-    /// decoded with the same password.
+    /// Provide either inline text as a positional argument, or a file
+    /// path via --file. Using --file reads raw bytes directly, preserving
+    /// exact content including trailing newlines and binary data.
+    ///
+    /// Examples:
+    ///   dendec encode "Hello"
+    ///   dendec encode --file src/main.rs --as main.rs.dna
     Encode {
-        /// The Unicode text to encode (supports emoji, newlines, all UTF-8)
-        text: String,
+        /// Inline text to encode. Omit when using --file.
+        text: Option<String>,
+
+        /// Read input from this file path (binary-safe, raw bytes)
+        #[arg(short, long, value_name = "PATH")]
+        file: Option<PathBuf>,
+
+        /// Write DNA output to this file instead of stdout
+        #[arg(long = "as", value_name = "PATH")]
+        save_as: Option<PathBuf>,
 
         /// Display DNA output in groups of N bases (default: continuous)
         #[arg(short, long, value_name = "N")]
         group: Option<usize>,
     },
 
-    /// Decode an encrypted DNA sequence back to Unicode text
+    /// Decode an encrypted DNA sequence back to text or a file
     ///
-    /// You will be prompted to enter the password used during encoding.
-    /// Wrong password or corrupted data will produce a clear error.
+    /// Provide either the DNA string as a positional argument, or a file
+    /// path via --file. Using --as writes the decoded bytes directly to a
+    /// file, preserving exact byte content including trailing newlines.
+    ///
+    /// Examples:
+    ///   dendec decode "ATGC..."
+    ///   dendec decode --file main.rs.dna --as main.rs
     Decode {
-        /// The DNA sequence to decode (only A, T, G, C characters)
-        dna: String,
+        /// Inline DNA sequence to decode. Omit when using --file.
+        dna: Option<String>,
+
+        /// Read DNA input from this file path
+        #[arg(short, long, value_name = "PATH")]
+        file: Option<PathBuf>,
+
+        /// Write decoded output to this file instead of stdout
+        #[arg(long = "as", value_name = "PATH")]
+        save_as: Option<PathBuf>,
     },
 }
-

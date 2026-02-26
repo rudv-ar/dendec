@@ -1,9 +1,8 @@
 ![dendec-logo](./assets/dendec.jpg)
 
+**DNA Encode and Decode** — Password-based encrypted data encoding with genomic steganography. dendec is a CLI tool that transforms any file or text into a sequence of DNA bases (A, T, G, C) using production-grade cryptography, and optionally converts those bases into coordinates pointing to real locations inside the sequenced human genome — making the transmitted artifact indistinguishable from routine bioinformatics research output.
 
-**DNA Encode and Decode** — Password-based encrypted Unicode to DNA encoding. Shortly known as dendec, it is a CLI tool for steganographic obfuscation alongside production-grade cryptography. Output is a DNA sequence visually indistinguishable from real genomic data. Via `dendec refer` (coming soon), that sequence can be synthesised into coordinates pointing to real genomic databases — the data was always there, you just need the coordinates and a password.
-
-The world's first general-purpose DNA-native encrypted data format. Your data becomes a sequence of nucleotide bases. Locked behind production-grade cryptography. Indistinguishable from genomic output. Decodable only with `dendec` and the correct password.
+The world's first general-purpose DNA-native encrypted data format, with a fully offline genomic steganography layer built on a pre-computed lookup table derived from the human reference genome hg38.
 
 ```
 $ dendec encode "Hello, World!"
@@ -11,32 +10,40 @@ Enter password:
 Confirm password:
 Encoding… (Argon2id key derivation may take a moment)
 GCATCGATCGGCTAGCATCGATCGGCTAGCATCGATCGGCTAGCAT...
+
+$ dendec refer -r --from message.dna --to annotation_batch7.bed
+Loading reference table...
+  Read 2048 bases from message.dna
+  Mapping 256 8-mers to genome coordinates...
+  Written 256 chunks → annotation_batch7.bed
 ```
 
 > [!IMPORTANT]
-> dendec is not a toy. The cryptographic primitives underneath are production-grade. Treat encoded output and passwords with the same seriousness you would any encrypted data.
+> dendec is not a toy. The cryptographic primitives are production-grade. Treat encoded output and passwords with the same seriousness you would any encrypted data.
 
 
-## &#xe897; What is dendec
+## What is dendec
 
-Most encryption tools announce themselves. PGP output looks like PGP. AES-encrypted blobs look encrypted. Even steganography tools hide data in known ways with known detectors.
+Most encryption tools announce themselves. PGP output looks like PGP. AES-encrypted blobs look encrypted. Even conventional steganography hides data in known carrier formats with known detectors.
 
-dendec is different in a fundamental sense.
+dendec approaches the problem differently at a fundamental level.
 
-It encodes your data using the vocabulary of molecular biology — A, T, G, C — the same four bases that constitute every genome ever sequenced. The output is visually and structurally indistinguishable from a real DNA sequencing result. No armored headers. No base64 padding. Nothing that flags as ciphertext to any scanner trained on conventional encrypted formats.
+It encodes your data using the vocabulary of molecular biology — A, T, G, C — the same four nucleotide bases that constitute every genome ever sequenced. The raw output is visually and structurally indistinguishable from a DNA sequencing result. No armored headers. No base64 padding. Nothing that registers as ciphertext to any scanner trained on conventional encrypted formats.
 
-Under the surface it is cryptographically serious:
+With the refer layer active, even the DNA bases disappear. The transmitted artifact becomes a list of coordinates into public human chromosome databases — the kind of annotation file that bioinformatics researchers produce, share on GitHub, and email to colleagues every day. No encrypted data exists in transit. The message is latent inside the sequenced history of life on Earth, recoverable only by someone who holds the correct password and knows where to look.
+
+Under the surface, the cryptography is serious:
 
 - Argon2id key derivation — memory-hard, GPU and ASIC resistant, OWASP and NIST recommended
 - ChaCha20-Poly1305 authenticated encryption — simultaneous confidentiality and integrity
-- Key-derived DNA alphabet — the base mapping itself is derived from the password
+- Key-derived DNA alphabet — the base-to-bit mapping itself is derived from the password
 - Random salt and nonce per encode — identical inputs never produce identical output
 - Self-contained output — salt, nonce, version, and ciphertext all embedded in the sequence itself
 
 
-## &#xe8b8; Installation
+## Installation
 
-### From source
+**From source**
 
 ```bash
 git clone https://github.com/rudv-ar/dendec
@@ -44,17 +51,38 @@ cd dendec
 cargo build --release
 ```
 
-The compiled binary will be at `./target/release/dendec`.
+The compiled binary will be at `./target/release/dendec`. It is fully self-contained — the genomic reference table is embedded inside the binary at compile time and requires no external files at runtime.
 
-### Requirements
+**Requirements**
 
-- Rust 1.75 or later
-- Cargo
+Rust 1.75 or later and Cargo. No external C libraries, no system dependencies.
+
+> [!NOTE]
+> The `data/table.bin` file must be present in the repository root before compiling, as it is embedded via `include_bytes!` during the build. It is committed to the repository and does not need to be generated by users. If you are building from a fresh clone, it is already there.
 
 
-## &#xe869; Usage
+## Architecture
 
-### Encode text
+dendec is built as three composable layers, each independent of the others, each protecting against a different threat.
+
+**Layer 1 — dendec core**
+
+The cryptographic foundation. Any file or text is encrypted and serialised as a flat string of A, T, G, C characters. This layer owns all security guarantees. The output is the `.dna` file.
+
+**Layer 2 — dendec wrap**
+
+A protocol-agnostic batch transform layer. Intercepts the output of any shell command and applies the core encode or decode pipeline to every appropriate file produced. Enables transparent integration with `git clone`, `curl`, `wget`, and arbitrary shell commands.
+
+**Layer 3 — dendec refer**
+
+A steganographic transport layer that sits on top of the core. It accepts a `.dna` file as opaque A/T/G/C characters and replaces each 8-base chunk with a coordinate pointing to a real location in the human reference genome (hg38), writing a standard BED file. The operation is fully offline — a pre-built lookup table embedded in the binary handles all coordinate translation without network access, without NCBI API calls, and without any external dependencies.
+
+These layers are designed to be composable and independent. The refer layer knows nothing about passwords or cryptography. The core layer knows nothing about genomic coordinates. Breaking one layer does not affect the security guarantee of any other.
+
+
+## Layer 1 — Core Encode and Decode
+
+### Encoding text
 
 ```bash
 dendec encode "Your secret message"
@@ -62,65 +90,148 @@ dendec encode "Your secret message"
 
 All Unicode is supported — emoji, CJK characters, Arabic, newlines, tabs, every valid UTF-8 sequence.
 
-### Encode with grouped output
+### Encoding with grouped output
 
 ```bash
 dendec encode "Your secret message" --group 10
 ```
 
-Output:
+Output is formatted in blocks of 10 bases separated by spaces, which is cosmetic only. The decoder strips whitespace automatically before processing.
+
 ```
 ATGCATGCAT GCATGCATGC TAGCTAGCAT...
 ```
 
-Grouping is cosmetic only. The decoder strips whitespace automatically.
-
-### Decode
+### Decoding
 
 ```bash
 dendec decode "ATGCTAGCAT..."
 ```
 
-### Encode a file — binary-safe
+### Encoding a file
 
 ```bash
-dendec encode --file src/main.rs --as main.rs.dna
+dendec encode --file secret_document.pdf --as secret_document.pdf.dna
 ```
 
-Reads raw bytes directly from disk. Every byte — including trailing newlines and binary content — is preserved exactly. No shell substitution mangling.
+Reads raw bytes directly from disk. Every byte — including trailing newlines and binary content — is preserved exactly. The output is a `.dna` file containing the flat DNA string.
 
-### Decode a file — binary-safe
+### Decoding a file
 
 ```bash
-dendec decode --file main.rs.dna --as main.rs
+dendec decode --file secret_document.pdf.dna --as secret_document.pdf
 ```
 
-Writes raw bytes directly to the output file. Byte-for-byte identical to the original.
+Writes raw bytes directly to the output file, byte-for-byte identical to the original.
 
-### Verify a roundtrip
+### Verifying a roundtrip
 
 ```bash
 dendec encode --file src/main.rs --as main.rs.dna
 dendec decode --file main.rs.dna --as restored.rs
 diff src/main.rs restored.rs
-# empty — perfect roundtrip
+# no output — perfect roundtrip
 ```
 
 > [!NOTE]
-> The `--as` flag writes output directly to a named file and prints a confirmation line to stderr. Without `--as`, output goes to stdout.
+> The `--as` flag writes output to a named file and prints a confirmation to stderr. Without `--as`, output goes to stdout.
+
+### How it works
+
+**Encode pipeline**
+
+```
+Input (text or raw bytes)
+    │
+    ▼
+Argon2id(password, random_salt_128bit)
+    ├──► cipher_key      [256 bits — ChaCha20 key]
+    └──► mapping_seed    [64 bits  — DNA shuffle seed]
+    │
+    ▼
+Fisher-Yates([A,T,G,C], mapping_seed) ──► permuted DNA mapping
+    │
+    ▼
+ChaCha20-Poly1305(plaintext, cipher_key, random_nonce_96bit) ──► ciphertext
+    │
+    ▼
+Binary packet: [DNDC][v1][salt 16B][nonce 12B][payload_len 8B][ciphertext]
+    │
+    ▼
+2 bits per base, MSB-first, using permuted mapping
+    │
+    ▼
+GCATCGATCGGCTAGC...   (to stdout or --as file)
+```
+
+The key-derived permuted mapping is a subtle but important design detail. The four bases [A, T, G, C] are not statically mapped to 2-bit values — they are shuffled via Fisher-Yates using a seed produced by Argon2id. The base-to-bit assignment itself is therefore key-dependent. Without the password, an attacker does not even know which of the 24 possible permutations was used. It adds a second layer of key-dependency on top of the AEAD guarantee.
+
+**Binary header format**
+
+The header is embedded directly inside the DNA sequence as the first 41 bytes, corresponding to the first 164 bases of any dendec output.
+
+```
+Offset   Length   Field
+0        4        Magic bytes  0x44 0x4E 0x44 0x43  ("DNDC")
+4        1        Version      0x01
+5        16       Argon2id salt         (random, 128 bits)
+21       12       ChaCha20-Poly1305 nonce  (random, 96 bits)
+33       8        Payload length        (u64 little-endian)
+41       N        Ciphertext            (payload + 16 byte Poly1305 MAC)
+```
+
+Everything required for decryption lives inside the DNA string itself. No sidecar files, no external configuration, no key exchange. The sequence is the complete artifact.
+
+**Decode pipeline**
+
+```
+DNA string or .dna file
+    │
+    ▼
+Strip whitespace and grouping separators
+    │
+    ▼
+Try all 24 permutations of [A,T,G,C] against the first 164 bases
+    │   For each permutation:
+    │     decode header bytes → check magic "DNDC"
+    │     extract salt → Argon2id(password, salt) → expected mapping
+    │     confirm derived mapping matches current permutation
+    ▼
+Confirmed mapping recovered
+    │
+    ▼
+Decode full DNA string → binary packet
+    │
+    ▼
+Parse header → extract salt, nonce, payload_len
+    │
+    ▼
+Argon2id(password, salt) ──► cipher_key
+    │
+    ▼
+ChaCha20-Poly1305 decrypt and verify Poly1305 MAC
+    ├── correct password  → plaintext bytes returned
+    ├── wrong password    → MAC mismatch → DecryptionFailed
+    └── corrupted data    → MAC mismatch → DecryptionFailed
+    │
+    ▼
+Raw bytes → file (--as) or UTF-8 text → stdout
+```
+
+The bootstrap loop tries at most 24 permutations. For each candidate it runs Argon2id once to verify the mapping. In practice the correct permutation is found on the first or second attempt.
 
 
-## &#xe91c; wrap — Protocol-Agnostic Batch Transform
+## Layer 2 — wrap
 
-`dendec wrap` intercepts the output of any shell command and applies a DNA transform to every appropriate file it produces. Directory structure is preserved exactly. Binary files are detected and skipped automatically. One password covers the entire operation — each file still gets its own random salt and nonce internally.
+`dendec wrap` intercepts the output of any shell command and applies the core encode or decode pipeline to every appropriate file it produces. Directory structure is preserved exactly. Binary files are detected and skipped automatically. One password covers the entire operation — each file still gets its own random salt and nonce internally.
 
-### Encode a local directory
+### Encoding a local directory
 
 ```bash
 dendec wrap -e ./myproject
 ```
 
-Walks the entire directory tree, encodes every readable file to `.dna` in place, removes the originals.
+Walks the entire directory tree, encodes every readable file to `.dna` in place, and removes the originals on success.
 
 ```
   Scanning ./myproject...
@@ -136,238 +247,235 @@ Encoding 15 file(s)...
   15 files encoded  |  1 skipped  |  0 failed
 ```
 
-### Decode a local directory
+### Decoding a local directory
 
 ```bash
 dendec wrap -d ./myproject
 ```
 
-Walks the directory, finds every `.dna` file, decodes each one back to its original bytes, removes the `.dna` file. The directory is restored to its exact pre-encode state.
+Walks the directory, finds every `.dna` file, decodes each one back to its original bytes, and removes the `.dna` file on success. The directory is restored to its exact pre-encode state.
 
-### Wrap a git clone — encode
+### Wrapping a git clone
 
 ```bash
+# Encode everything produced by a git clone
 dendec wrap -e git clone https://github.com/user/repo
-```
 
-Snapshots the working directory, runs the clone, diffs the filesystem to find exactly what was produced, then encodes every readable file in the cloned directory. Push the result anywhere — it looks like a genomics data repository.
-
-### Wrap a git clone — decode
-
-```bash
+# Decode a repository containing .dna files
 dendec wrap -d git clone https://github.com/user/repo
 ```
 
-Clones a repository containing `.dna` files and decodes them all in place. The result is the original working source tree.
+dendec takes a filesystem snapshot before running the command, runs the command, diffs the snapshot to find exactly what was produced, then encodes or decodes only those files. The clone directory is narrowed automatically so unrelated files in the working directory are not affected.
 
-### Wrap curl — file output
+**Live example — rudv-ar/datatest**
 
-```bash
-dendec wrap -d curl -o config.toml.dna https://example.com/config.toml.dna
-```
-
-curl writes to disk, the snapshot diff detects it, dendec decodes it.
-
-### Wrap curl — stdout capture
+The repository at `https://github.com/rudv-ar/datatest` holds the full dendec source tree in both DNA-encoded and plaintext form side by side. The encoded copy uses the password `rust`.
 
 ```bash
-dendec wrap -d curl https://example.com/file.rs.dna
+# Clone and decode in a single command
+dendec wrap -d git clone https://github.com/rudv-ar/datatest
+# Enter password: rust
+# All .dna files inside datatest/dendec.dna/ are decoded in place
 ```
-
-dendec captures stdout from curl and decodes it directly without touching the filesystem.
-
-### What wrap skips automatically
-
-Binary files are detected by content inspection. The first 512 bytes are sampled using the same heuristic git uses. The following are always skipped regardless:
-
-- `.git/` directory
-- `target/` directory
-- `node_modules/`, `.svn/`, `.hg/`
-- Known binary extensions: `png jpg jpeg gif bmp ico webp tiff pdf zip tar gz bz2 xz wasm exe dll so dylib mp3 mp4 wav ogg flac avi mkv mov db sqlite pyc class`
-- Files containing null bytes
-- Files where more than 10% of sampled bytes are non-printable
-
-
-## &#xe91c; Live Example — rudv-ar/datatest
-
-The repository at `https://github.com/rudv-ar/datatest` is a live demonstration of dendec wrap in action. It holds the full dendec source tree in both DNA-encoded and plaintext form side by side for direct comparison.
-
-```
-datatest/
-├── dendec.dna/                  ← full dendec source, DNA-encoded (password: rust)
-│   ├── Cargo.lock.dna
-│   ├── Cargo.toml.dna
-│   ├── LICENSE.dna
-│   ├── readme.md.dna
-│   ├── assets/
-│   │   └── dendec.jpg           ← binary, skipped by wrap automatically
-│   ├── src/
-│   │   ├── main.rs.dna
-│   │   ├── cli.rs.dna
-│   │   ├── crypto.rs.dna
-│   │   ├── dna.rs.dna
-│   │   ├── encoding.rs.dna
-│   │   ├── error.rs.dna
-│   │   └── wrap/
-│   │       ├── mod.rs.dna
-│   │       ├── classify.rs.dna
-│   │       ├── fetch.rs.dna
-│   │       ├── snapshot.rs.dna
-│   │       └── transform.rs.dna
-│   └── src.backup/
-│       └── *.dna
-└── dendec.plaintext/            ← original source for verification
-    ├── Cargo.lock
-    ├── Cargo.toml
-    └── src/
-        └── ...
-```
-
-### Clone and decode
 
 ```bash
+# Or clone first, then decode the directory directly
 git clone https://github.com/rudv-ar/datatest
 dendec wrap -d ./datatest/dendec.dna
 # Enter password: rust
 ```
 
-### Verify against plaintext
+```bash
+# Verify the decoded output against the plaintext reference
+diff -r datatest/dendec.dna datatest/dendec.plaintext
+# no output — byte-for-byte identical after decode
+```
+
+The datatest repository structure is:
+
+```
+datatest/
+├── dendec.dna/                       ← full dendec source, DNA-encoded (password: rust)
+│   ├── Cargo.lock.dna
+│   ├── Cargo.toml.dna
+│   ├── data/
+│   │   └── table.bin                 ← binary, carried as-is
+│   ├── src/
+│   │   ├── main.rs.dna
+│   │   ├── cli.rs.dna
+│   │   ├── crypto.rs.dna
+│   │   ├── refer/
+│   │   │   ├── chunk.rs.dna
+│   │   │   ├── coordinate.rs.dna
+│   │   │   ├── mod.rs.dna
+│   │   │   ├── reverse.rs.dna
+│   │   │   └── table.rs.dna
+│   │   └── wrap/
+│   │       ├── mod.rs.dna
+│   │       └── ...
+│   └── tools/build_table/src/main.rs.dna
+└── dendec.plaintext/                 ← original source for verification
+    └── src/
+        └── ...
+```
+
+### Wrapping curl
 
 ```bash
-diff -r datatest/dendec.plaintext datatest/dendec.dna
-# empty — byte-for-byte identical after decode
+# curl writes to disk — snapshot detects the file, dendec decodes it
+dendec wrap -d curl -o config.toml.dna https://raw.githubusercontent.com/rudv-ar/datatest/main/dendec.dna/Cargo.toml.dna
+
+# curl writes to stdout — dendec captures and decodes the stream directly
+dendec wrap -d curl https://raw.githubusercontent.com/rudv-ar/datatest/main/dendec.dna/src/main.rs.dna
 ```
 
-### Or clone and decode in a single command
+### What wrap skips automatically
+
+Binary files are detected by content inspection. The first 512 bytes are sampled using the same heuristic git uses. The following are always skipped:
+
+`.git/`, `target/`, `node_modules/`, `.svn/`, `.hg/`, known binary extensions (`png jpg jpeg gif bmp ico webp tiff pdf zip tar gz bz2 xz wasm exe dll so dylib mp3 mp4 wav ogg flac avi mkv mov db sqlite pyc class`), files containing null bytes, and files where more than 10% of the sampled bytes are non-printable.
+
+
+## Layer 3 — refer
+
+`dendec refer` is a steganographic transport layer. It accepts a `.dna` file — the flat ATGC string produced by `dendec encode` — and replaces each 8-base chunk with a coordinate pointing to a real location inside the human reference genome hg38. The output is a standard BED file: the most common annotation format in bioinformatics, used daily by thousands of researchers, and processable by every major genomics tool including UCSC Genome Browser, bedtools, samtools, and IGV.
+
+An intercepted BED file produced by refer contains no encrypted data, no DNA bases, and no ciphertext. It contains only chromosome accession numbers and genome coordinates. To any observer it is a routine genomics annotation.
+
+### How refer works
+
+**The 8-mer mechanism**
+
+Every 8 bases of DNA represent exactly 2 bytes of source data after encryption (4 bases per byte × 2 bytes = 8 bases). This alignment means no padding, no remainder, and no edge cases. There are 4^8 = 65,536 possible unique 8-mers. The human reference genome hg38 contains 3.2 billion bases. Every possible 8-mer appears thousands of times. Coverage is mathematically guaranteed.
+
+**The lookup table**
+
+A pre-computed lookup table maps every possible 8-mer to multiple coordinates in hg38. Built by scanning chromosome 1 of the human genome (248 million bases), the table contains 65,536 entries with up to 8 coordinate options per 8-mer. It is embedded directly into the dendec binary via `include_bytes!` at compile time, so no external files are needed at runtime and no network calls are ever made.
+
+The 8-mer is used as a direct array index using a fixed base-4 encoding (A=0, T=1, G=2, C=3). This is entirely independent of the key-derived permuted mapping in the crypto layer — refer treats the ATGC string as opaque characters and never interprets their cryptographic meaning.
+
+**The forward and reverse index**
+
+When the table loads at startup, two in-memory indices are built simultaneously:
+
+The forward index maps a base-4 8-mer index to a list of genome coordinates. Used during encoding — each 8-mer chunk is looked up and one coordinate is randomly selected from the available options, ensuring that repeated 8-mers in the DNA produce varied coordinates in the BED output rather than mechanical repetition.
+
+The reverse index maps a coordinate key back to its 8-mer index. Used during decoding — each coordinate in the BED file is looked up and the original 8-mer is recovered in O(1) time.
+
+Both directions are completely offline and instant.
+
+**The BED output format**
+
+```
+##dendec-refer v0.1.0
+##assembly GCF_000001405.40 hg38
+##chunk_size 8
+##dna_length 168432
+##chunk_count 21054
+NC_000001.11    883401    883409    chunk_00000000    0    +
+NC_000001.11    19823     19831     chunk_00000001    0    -
+NC_000001.11    28401     28409     chunk_00000002    0    +
+```
+
+The six columns are the chromosome accession (RefSeq format), start position (0-based, BED convention), end position (always start+8), chunk name for ordering, score (always 0, present for BED compliance), and strand. The `##` header lines are standard in BED, VCF, and GFF formats. A researcher opening this file in IGV, UCSC Genome Browser, or any bioinformatics tool sees a completely normal annotation set.
+
+### Using refer
+
+**Encoding — converting a .dna file to a BED file**
 
 ```bash
-dendec wrap -d git clone https://github.com/rudv-ar/datatest
-# Enter password: rust
-# All .dna files inside datatest/ are decoded in place
+dendec refer -r --from secret_document.pdf.dna --to annotation_batch7.bed
 ```
 
-
-## &#xe90d; How It Works
-
-### Encode pipeline
-
 ```
-Input (text or raw bytes from file)
-    │
-    ▼
-UTF-8 bytes or raw binary
-    │
-    ▼
-Argon2id(password, random_salt)
-    ├──► cipher_key      [256 bits — ChaCha20 key]
-    └──► mapping_seed    [64 bits  — DNA shuffle seed]
-    │
-    ▼
-Fisher-Yates shuffle([A,T,G,C], mapping_seed) ──► DNA mapping table
-    │
-    ▼
-ChaCha20-Poly1305(plaintext, cipher_key, random_nonce) ──► ciphertext
-    │
-    ▼
-Binary packet: [DNDC][v1][salt 16B][nonce 12B][payload_len 8B][ciphertext]
-    │
-    ▼
-2 bits per base: 00→X  01→X  10→X  11→X  (X determined by mapping table)
-    │
-    ▼
-Output: GCATCGATCGGCTAGC...  (to stdout or --as file)
+Loading reference table...
+  Read 168432 bases from secret_document.pdf.dna
+  Mapping 21054 8-mers to genome coordinates...
+  Written 21054 chunks → annotation_batch7.bed
 ```
 
-### Binary header format
+**Decoding — reconstructing a .dna file from a BED file**
 
-The header is embedded directly into the DNA sequence as the first 41 bytes, which corresponds to the first 164 bases of any dendec output.
-
-```
-Offset   Length   Field
-───────  ──────   ──────────────────────────────────────────
-0        4        Magic bytes  0x44 0x4E 0x44 0x43  ("DNDC")
-4        1        Version      0x01
-5        16       Argon2id salt         (random, 128 bits)
-21       12       ChaCha20-Poly1305 nonce  (random, 96 bits)
-33       8        Payload length        (u64 little-endian)
-41       N        Ciphertext            (payload + 16 byte MAC)
+```bash
+dendec refer -u --from annotation_batch7.bed --to secret_document.pdf.dna
 ```
 
-Everything required for decryption lives inside the DNA string itself. No sidecar files. No external configuration. No key exchange. The sequence is the complete artifact.
-
-### Decode pipeline
-
 ```
-DNA string or .dna file
-    │
-    ▼
-Strip whitespace and grouping separators
-    │
-    ▼
-Try all 24 permutations of [A,T,G,C] against first 164 bases
-    │   For each permutation:
-    │     → decode to bytes
-    │     → check for magic bytes "DNDC"
-    │     → extract salt
-    │     → run Argon2id(password, salt) → derive expected mapping
-    │     → confirm derived mapping matches current permutation
-    ▼
-Confirmed mapping recovered
-    │
-    ▼
-Decode full DNA string → binary packet
-    │
-    ▼
-Parse header → extract salt, nonce, payload_len
-    │
-    ▼
-Argon2id(password, salt) ──► cipher_key
-    │
-    ▼
-ChaCha20-Poly1305 decrypt and verify MAC
-    ├── correct password  → plaintext bytes returned
-    ├── wrong password    → MAC mismatch → DecryptionFailed error
-    └── corrupted data    → MAC mismatch → DecryptionFailed error
-    │
-    ▼
-Raw bytes → file (--as) or UTF-8 text → stdout
+Loading reference table...
+  Read 21054 chunks from annotation_batch7.bed
+  Recovered 168432 bases → secret_document.pdf.dna
 ```
 
-> [!NOTE]
-> The bootstrap loop tries at most 24 permutations. For each candidate it runs Argon2id once to verify the mapping. In practice the correct permutation is found on the first or second attempt. The upper bound is 24 Argon2id invocations, well under 30 seconds on typical hardware.
+### The complete two-layer pipeline
+
+**Sender**
+
+```bash
+# Step 1 — encrypt the source file into a DNA string
+dendec encode --file secret_document.pdf --as secret_document.pdf.dna
+
+# Step 2 — convert DNA bases to genomic coordinates
+dendec refer -r --from secret_document.pdf.dna --to annotation_GRCh38_batch7.bed
+
+# Step 3 — send annotation_GRCh38_batch7.bed through any channel
+# Email it. Post it on GitHub. Put it in a public Gist.
+# It looks like a genomics researcher's annotation file.
+```
+
+**Recipient**
+
+```bash
+# Step 1 — reconstruct the DNA string from coordinates
+dendec refer -u --from annotation_GRCh38_batch7.bed --to secret_document.pdf.dna
+
+# Step 2 — decrypt
+dendec decode --file secret_document.pdf.dna --as secret_document.pdf
+```
+
+**What travels between sender and recipient**
+
+`annotation_GRCh38_batch7.bed` — a file containing nothing but chromosome names and genome position numbers. It contains no ciphertext, no DNA bases, and no dendec headers of any kind. The encrypted data does not exist in transit. The coordinates point to locations inside the publicly sequenced human genome where the relevant sequences happen to appear. The message was always there.
+
+### The two independent security layers
+
+Refer provides steganography — it hides the existence of the message. The core layer provides cryptography — it protects the content of the message. These guarantees are fully independent.
+
+If an adversary intercepts the BED file and identifies it as dendec refer output, they can reconstruct the DNA string. They still cannot decrypt it without the password, because ChaCha20-Poly1305 holds regardless. If an adversary attempts to brute-force the password without identifying the file as suspicious at all, the Argon2id memory-hard KDF makes that computationally prohibitive. Breaking the steganographic layer does not weaken the cryptographic layer. The two are composable and orthogonal by design.
 
 
-## &#xe32a; Security
+## Security
 
-### Cryptographic primitives
+**Cryptographic primitives**
 
 | Primitive | Role | Rationale |
 |---|---|---|
 | Argon2id | Password to key | Winner of Password Hashing Competition 2015. Memory-hard. Combines data-dependent and data-independent hardness. Current OWASP and NIST recommendation. |
 | ChaCha20-Poly1305 | Encryption and authentication | AEAD construction. Constant-time by design. Mandated in TLS 1.3. Poly1305 MAC ensures any tampering is detected before plaintext is returned. |
-| StdRng seeded from key material | DNA mapping shuffle | ChaCha-based CSPRNG. Seeded from Argon2id output, not the password directly. Deterministic given the same key. |
-| rand::thread_rng | Salt and nonce generation | OS-seeded CSPRNG. Fresh 128-bit salt and 96-bit nonce per encode operation. |
+| StdRng seeded from key material | DNA mapping shuffle | ChaCha-based CSPRNG. Seeded from Argon2id output. Deterministic given the same key material. |
+| rand::thread_rng | Salt and nonce generation | OS-seeded CSPRNG. Fresh 128-bit salt and 96-bit nonce per encode. |
 
-### Argon2id parameters
+**Argon2id parameters**
 
 | Parameter | Value | Effect |
 |---|---|---|
-| Memory cost | 65536 KiB (64 MiB) | RAM required per guess |
+| Memory cost | 65536 KiB (64 MiB) | RAM required per password guess |
 | Time cost | 3 iterations | CPU cost multiplier |
 | Parallelism | 1 | Single-threaded |
 
-At these parameters each password guess costs approximately 64 MiB of RAM and one second of wall time. An attacker with substantial hardware resources still faces centuries of work against a strong passphrase.
+At these parameters, each password guess costs approximately 64 MiB of RAM and one second of wall time. An attacker with substantial hardware resources still faces prohibitive cost against a strong passphrase.
 
-### Threat model
+**Threat model**
 
 | Attack vector | Mitigation |
 |---|---|
 | Wrong password | Poly1305 MAC fails before any plaintext is returned |
 | Corrupted or tampered DNA | MAC fails, clean error, no partial output |
-| Rainbow table precomputation | Blocked by 128-bit random salt. Same password never produces the same key. |
-| Nonce reuse | Impossible. Fresh random nonce generated per encode. |
-| Mapping brute-force (24 permutations) | Each permutation still hits ChaCha20-Poly1305. No shortcut past the KDF. |
-| Visual identification of ciphertext | Output is valid nucleotide notation. Unrecognisable as encrypted data to conventional scanners. |
+| Rainbow table precomputation | Blocked by 128-bit random salt — same password never produces the same key |
+| Nonce reuse | Impossible — fresh random nonce generated per encode |
+| Mapping brute-force (24 permutations) | Each permutation still hits full ChaCha20-Poly1305 — no shortcut past the KDF |
+| Visual identification of ciphertext | Output is valid nucleotide notation, unrecognisable as encrypted data to any conventional scanner |
+| BED file identified as refer output | DNA string reconstructed but still protected by Argon2id + ChaCha20-Poly1305 |
+| BED file not identified as suspicious | Observer sees standard genomics annotation — no indication encrypted data exists |
 
 > [!CAUTION]
 > dendec does not currently zeroize keys and passwords from process memory after use. On shared or compromised systems a memory dump could expose key material. Zeroization via the `zeroize` crate is on the roadmap.
@@ -376,141 +484,86 @@ At these parameters each password guess costs approximately 64 MiB of RAM and on
 > dendec cannot protect against weak passwords. The strength of Argon2id is irrelevant if the passphrase is guessable. Use a long random passphrase.
 
 
-## &#xe86f; Project Structure
+## Project Structure
 
 ```
 dendec/
-├── Cargo.toml
-├── LICENSE
-├── README.md
-└── src/
-    ├── main.rs          Entry point. CLI dispatch and password prompts. No crypto logic.
-    ├── cli.rs           clap v4 derive API. Subcommand and flag definitions.
-    ├── crypto.rs        Argon2id KDF. ChaCha20-Poly1305 encrypt and decrypt. Mapping derivation.
-    ├── encoding.rs      Binary header format. Full encode and decode pipeline. Bootstrap logic.
-    ├── dna.rs           Bit-level bytes to DNA and DNA to bytes conversion. Grouping utility.
-    ├── error.rs         Custom error enum via thiserror. No panics in production paths.
-    └── wrap/
-        ├── mod.rs       Orchestration. Local dir shortcut. Git clone narrowing. Stdout capture.
-        ├── snapshot.rs  Filesystem snapshot and diff. Detects exactly what a command produced.
-        ├── classify.rs  Binary detection. Skip rules. Extension logic.
-        ├── transform.rs Batch encode/decode. Per-file progress. Summary report.
-        └── fetch.rs     Subprocess execution. Disk vs stdout detection. Git clone parsing.
+├── Cargo.toml                        Workspace root, includes tools/build_table
+├── data/
+│   └── table.bin                     Pre-built hg38 lookup table, embedded at compile time
+├── src/
+│   ├── main.rs                       Entry point — CLI dispatch and password prompts
+│   ├── cli.rs                        clap v4 derive API — subcommand and flag definitions
+│   ├── crypto.rs                     Argon2id KDF, ChaCha20-Poly1305, mapping derivation
+│   ├── encoding.rs                   Binary header format, full encode/decode pipeline
+│   ├── dna.rs                        Bit-level bytes ↔ DNA conversion, grouping utility
+│   ├── error.rs                      Unified error enum via thiserror — no panics in production
+│   ├── refer/
+│   │   ├── mod.rs                    Orchestration — refer_encode and refer_decode entry points
+│   │   ├── table.rs                  Embedded table, forward and reverse indices, O(1) lookup
+│   │   ├── chunk.rs                  8-mer splitting and reassembly — pure, no I/O
+│   │   ├── coordinate.rs             BED format read and write
+│   │   └── reverse.rs                Reverse complement utility
+│   └── wrap/
+│       ├── mod.rs                    Orchestration — local dir, git clone, stdout paths
+│       ├── snapshot.rs               Filesystem snapshot and diff
+│       ├── classify.rs               Binary detection, skip rules, extension logic
+│       ├── transform.rs              Batch encode/decode, per-file progress, summary
+│       └── fetch.rs                  Subprocess execution, disk vs stdout detection
+└── tools/
+    └── build_table/
+        └── src/main.rs               One-time table builder — scans hg38, writes table.bin
 ```
 
+**The table builder**
 
-## &#xe5c3; Dependencies
+`tools/build_table` is a separate workspace binary that was run once to produce `data/table.bin`. It is not part of the normal build — end users never run it. It reads gzipped chromosome FASTA files (chr1.fa.gz and chr2.fa.gz from UCSC), slides an 8-mer window across every real base position, and records genome coordinates for all 65,536 possible 8-mers. The resulting binary is 3.1 MB and covers every possible 8-mer with up to 8 coordinate options each, all found within the first 35 million bases of chromosome 1.
+
+The output format (`data/table.bin`) begins with a 4-byte magic string `DRFT`, a version byte, a chromosome accession string table, and then 65,536 sequential entries in base-4 index order. Each entry stores a count byte followed by up to 8 coordinate records of 6 bytes each (1 byte chromosome index, 4 bytes start position, 1 byte strand). The accession strings are embedded in the file header itself, so adding additional chromosomes requires only rerunning the builder with new FASTA sources.
+
+
+## Dependencies
 
 | Crate | Version | Purpose |
 |---|---|---|
 | `clap` | 4 | CLI argument parsing via derive API |
 | `rpassword` | 7 | Hidden password prompt, no terminal echo |
 | `argon2` | 0.5 | Argon2id key derivation |
-| `rand` | 0.8 | Cryptographically secure salt and nonce generation |
+| `rand` | 0.8 | Cryptographically secure salt, nonce, and random coordinate selection |
 | `chacha20poly1305` | 0.10 | ChaCha20-Poly1305 AEAD encryption |
 | `thiserror` | 1 | Ergonomic custom error types |
 | `walkdir` | 2 | Recursive directory traversal for wrap |
 | `tempfile` | 3 | Temporary directories in tests (dev only) |
 
+The table builder additionally uses `flate2` for reading gzipped FASTA files.
 
-## &#xe877; Tests
+
+## Tests
 
 ```bash
 cargo test
 ```
 
-33 tests across five modules:
+58 tests across seven modules. The test suite takes approximately 120 seconds to complete, which is expected and correct — each encode and decode operation in the encoding tests pays the full Argon2id cost. Reduced test times would indicate the KDF is not functioning as intended.
 
 ```
-dna::tests
-  test_roundtrip_ascii
-  test_roundtrip_emoji
-  test_only_valid_bases
-  test_invalid_char_rejected
-  test_odd_length_rejected
-  test_custom_mapping_roundtrip
-  test_group_dna
-  test_zero_byte
-  test_max_byte
-
-encoding::tests
-  test_encode_decode_ascii
-  test_encode_decode_emoji
-  test_encode_raw_roundtrip
-  test_raw_binary_roundtrip
-  test_wrong_password_fails
-  test_grouped_output_decodes
-  test_different_passwords_produce_different_dna
-  test_same_password_different_each_time
-  test_corrupted_dna_fails
-  test_unicode_newlines_tabs
-  test_all_permutations_count
-
-wrap::snapshot::tests
-  test_new_file_detected
-  test_unchanged_file_not_in_diff
-  test_empty_dir_snapshot
-
-wrap::classify::tests
-  test_dna_file_skipped_in_encode
-  test_non_dna_skipped_in_decode
-  test_dna_file_decoded_in_decode
-  test_git_dir_excluded
-  test_binary_extension_skipped
-  test_text_file_encoded
-  test_null_byte_is_binary
-
-wrap::transform::tests
-  test_encode_decode_file_roundtrip
-  test_strip_dna_extension
-  test_human_size
+dna::tests                           9 tests   Roundtrip, mapping, validation, edge cases
+encoding::tests                      11 tests  Full pipeline, wrong password, corruption, permutations
+refer::chunk::tests                  7 tests   8-mer splitting, reassembly, error conditions
+refer::coordinate::tests             5 tests   BED read/write, malformed input, ordering
+refer::reverse::tests                4 tests   Reverse complement, palindromes, identity
+refer::table::tests                  9 tests   Table load, coverage, forward/reverse roundtrip
+wrap::classify::tests                7 tests   Binary detection, extension rules, exclusions
+wrap::snapshot::tests                3 tests   New file detection, diff, empty directory
+wrap::transform::tests               3 tests   File encode/decode roundtrip, utilities
 ```
 
-> [!NOTE]
-> The test suite takes approximately 80 seconds to complete. This is expected and correct. Each encode and decode operation in the encoding tests pays the full Argon2id cost. Reduced test times would indicate the KDF is not functioning as intended.
+The four refer::table tests that exercise the loaded table (`test_table_loads_without_panic`, `test_full_coverage`, `test_lookup_returns_coord`, `test_forward_reverse_roundtrip`, `test_all_kmers_roundtrip`) validate the complete end-to-end refer pipeline including the embedded binary. Full coverage of all 65,536 8-mers is asserted as a test invariant.
 
 
-## &#xe0b7; The Bigger Vision
+## TODO
 
-dendec is the core of a three-layer architecture.
-
-### Layer 1 — dendec core — `stable`
-
-Password-encrypted data serialised as A/T/G/C bases. Fully implemented, tested, and documented. Supports inline text, binary-safe file I/O via `--file` and `--as`, and grouped terminal output.
-
-### Layer 2 — dendec wrap — `stable`
-
-A protocol-agnostic fetch-and-transform layer. Wraps any shell command that produces files. Encodes all readable files to `.dna` format in place, preserving directory structure exactly. The transformed repository can be pushed to GitHub, hosted anywhere, fetched by anyone — and appears to contain genomics data.
-
-```bash
-dendec wrap -e ./myproject
-dendec wrap -d ./myproject
-dendec wrap -e git clone https://github.com/user/repo
-dendec wrap -d git clone https://github.com/user/repo
-dendec wrap -e curl -o config.toml https://example.com/config.toml
-dendec wrap -d curl -o config.toml.dna https://example.com/config.toml.dna
-```
-
-The `.dna` extension is the complete protocol. Any observer sees file annotations that look like biology research artifacts.
-
-### Layer 3 — dendec refer — `planned`
-
-The most architecturally significant layer. Instead of transmitting DNA bases, transmit coordinates into public genome databases. The bases themselves are never present in the message. They exist latent inside the sequenced genomes of real organisms — distributed across decades of publicly funded biology research — and are reconstructable only by someone who knows the correct coordinates and holds the correct password.
-
-```bash
-dendec refer encode output.dna      # DNA bases → genomic coordinate references
-dendec refer decode references.txt  # fetch genome slices → reconstruct → decrypt
-```
-
-An intercepted `references.txt` is indistinguishable from a researcher's genomic annotation notes.
-
-> [!NOTE]
-> With `dendec refer` fully implemented, no encrypted data exists in transit. The transmitted artifact is a list of coordinates into public biological databases. The message is latent inside the history of life on Earth.
-
-
-## &#xe14b; TODO — Upcoming Features
-
-### Near term
+**Near term**
 
 - [x] `--file` flag — binary-safe file encode and decode
 - [x] `--as` flag — write output directly to a named file
@@ -518,44 +571,39 @@ An intercepted `references.txt` is indistinguishable from a researcher's genomic
 - [ ] `--quiet` flag — suppress all stderr output for scripting
 - [ ] Richer terminal output — input size, output length, base count, elapsed time
 
-### dendec wrap
+**dendec wrap**
 
-- [x] Local directory transform — `dendec wrap -e ./dir`
-- [x] Git repository support — `dendec wrap -e git clone <url>`
+- [x] Local directory transform
+- [x] Git repository support
 - [x] curl and wget support — disk and stdout modes
 - [x] Binary file detection via content sampling
-- [x] `.git/`, `target/`, `node_modules/` exclusion
+- [x] Excluded directory rules
 - [x] Per-file progress reporting with sizes
 - [x] Summary report — transformed, skipped, failed
-- [ ] `--quiet` flag for scripting and CI
 - [ ] `--dry-run` — show what would be transformed without doing it
 - [ ] Elapsed time in summary report
 
-### Compression
+**dendec refer**
 
-- [ ] `--compress` flag — zstd compression applied before encryption
-- [ ] Compression flag stored in binary header version field
-- [ ] Compression ratio reported on encode
+- [x] Pre-built hg38 lookup table embedded in binary
+- [x] Forward O(1) encode — 8-mer to coordinate
+- [x] Reverse O(1) decode — coordinate to 8-mer
+- [x] Standard BED file output
+- [x] Fully offline — no network calls in either direction
+- [x] Strand encoding for coordinate variety
+- [ ] Optional coordinate variety via multiple chromosome sources
+- [ ] `--verify` flag — confirm BED file decodes cleanly before transmitting
 
-### Security hardening
+**Security hardening**
 
 - [ ] Zeroize keys and password material from memory after use (`zeroize` crate)
 - [ ] `--iterations` and `--memory` flags for Argon2id parameter tuning
 - [ ] Full timing side-channel audit
 
-### dendec refer
-
-- [ ] Coordinate format specification and versioning
-- [ ] NCBI RefSeq API integration with pinned assembly version
-- [ ] Substring search against genome database
-- [ ] Ambiguity resolution strategy for repeated substrings
-- [ ] `dendec refer encode` — DNA string to genomic coordinate list
-- [ ] `dendec refer decode` — coordinate list to DNA string to plaintext
-
-### Testing and distribution
+**Testing and distribution**
 
 - [ ] CLI integration tests via `assert_cmd`
-- [ ] Fuzz testing on the DNA parser
+- [ ] Fuzz testing on the DNA parser and BED parser
 - [ ] Cross-platform CI — Linux, macOS, Windows
 - [ ] Benchmark suite for Argon2id parameter selection
 - [ ] Publish to crates.io
@@ -564,29 +612,27 @@ An intercepted `references.txt` is indistinguishable from a researcher's genomic
 - [ ] Man page
 
 
-## &#xe838; Contributing
+## Contributing
 
-dendec is in active early development. The core and wrap layers are stable and fully tested. `refer` is the next milestone.
-
-The binary header format is versioned. Any future version of dendec will maintain backward compatibility with sequences encoded by v1. If you are building tooling on top of dendec, the header layout and magic bytes are stable.
+dendec is in active development. The core, wrap, and refer layers are all stable and fully tested. The binary header format is versioned — any future version of dendec will maintain backward compatibility with sequences encoded by v1. If you are building tooling on top of dendec, the header layout and magic bytes are stable.
 
 Issues and pull requests are welcome.
 
 
-## &#xe873; License
+## License
 
 MIT — see `LICENSE`.
 
 
-## &#xe0c8; Philosophy
+## Philosophy
 
 Make encrypted data indistinguishable from nature.
 
 Not indistinguishable from random noise — indistinguishable from biology. The entire history of life on Earth is written in four characters. Every organism that has ever existed used this alphabet. Every genome database in the world speaks it natively. No security scanner in existence is trained to treat it as a threat vector.
 
-dendec encodes your secrets into that language. An intercepted sequence looks like a fragment from a sequencing run, a slice from a database export, a researcher's working data. The content is invisible not because it is hidden but because it belongs.
+dendec encodes your secrets into that language. An intercepted `.dna` file looks like a fragment from a sequencing run, a slice from a database export, a researcher's working data. An intercepted `.bed` file looks like a genomics annotation — the kind posted as supplementary data in biology papers, shared between collaborators, and committed to public repositories every day.
 
-At full completion — with `dendec refer` implemented — the data does not exist in transit at all. It is latent inside the sequenced genomes of real organisms, distributed across petabases of publicly available biological data, reconstructable only by someone who knows precisely where to look and holds the correct password.
+With refer active, the encrypted data does not exist in transit at all. The transmitted artifact is a list of addresses into the publicly sequenced human genome — 3.2 billion bases of real biological history, distributed across decades of research and stored in public databases. The message is latent inside that history, recoverable only by someone who knows precisely where to look and holds the correct password.
 
 The bases were always there. dendec found them.
 

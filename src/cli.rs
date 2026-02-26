@@ -2,10 +2,6 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 /// dendec — DNA Encode/Decode
-///
-/// Encodes arbitrary Unicode text or raw binary files into a DNA base
-/// sequence (A/T/G/C) and decodes them back. All data is password-protected
-/// with modern authenticated encryption (ChaCha20-Poly1305 + Argon2id).
 #[derive(Parser, Debug)]
 #[command(
     name = "dendec",
@@ -22,10 +18,6 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Encode text or a file into an encrypted DNA sequence
-    ///
-    /// Provide either inline text as a positional argument, or a file
-    /// path via --file. Using --file reads raw bytes directly, preserving
-    /// exact content including trailing newlines and binary data.
     ///
     /// Examples:
     ///   dendec encode "Hello"
@@ -49,10 +41,6 @@ pub enum Command {
 
     /// Decode an encrypted DNA sequence back to text or a file
     ///
-    /// Provide either the DNA string as a positional argument, or a file
-    /// path via --file. Using --as writes the decoded bytes directly to a
-    /// file, preserving exact byte content including trailing newlines.
-    ///
     /// Examples:
     ///   dendec decode "ATGC..."
     ///   dendec decode --file main.rs.dna --as main.rs
@@ -67,5 +55,30 @@ pub enum Command {
         /// Write decoded output to this file instead of stdout
         #[arg(long = "as", value_name = "PATH")]
         save_as: Option<PathBuf>,
+    },
+
+    /// Run a command and encode or decode all files it produces
+    ///
+    /// wrap intercepts the output of any shell command and applies a DNA
+    /// transform to every appropriate file. Directory structure is preserved
+    /// exactly. Binary files are skipped automatically.
+    ///
+    /// Examples:
+    ///   dendec wrap -e git clone https://github.com/user/repo
+    ///   dendec wrap -d git clone https://github.com/user/repo
+    ///   dendec wrap -e curl -o config.toml https://example.com/config.toml
+    ///   dendec wrap -d curl -o config.toml.dna https://example.com/config.toml.dna
+    Wrap {
+        /// Encode mode — transform files to .dna
+        #[arg(short = 'e', long = "encode")]
+        encode: bool,
+
+        /// Decode mode — restore files from .dna
+        #[arg(short = 'd', long = "decode")]
+        decode: bool,
+
+        /// The command to run (everything after the flags)
+        #[arg(trailing_var_arg = true, required = true)]
+        command: Vec<String>,
     },
 }

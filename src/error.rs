@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -31,7 +32,22 @@ pub enum DendecError {
 
     #[error("Payload length mismatch: header says {header}, actual {actual}")]
     LengthMismatch { header: usize, actual: usize },
+
+    // ── wrap errors ───────────────────────────────────────────────
+    #[error("Wrap command failed with exit code {code}: {cmd}")]
+    WrapCommandFailed { cmd: String, code: i32 },
+
+    #[error("Wrap command produced no transformable files")]
+    WrapNoFilesFound,
+
+    #[error("Wrap failed on {path}: {reason}")]
+    WrapFileFailed { path: PathBuf, reason: String },
+
+    #[error("Wrap requires either -e (encode) or -d (decode), not both")]
+    WrapConflictingFlags,
+
+    #[error("Wrap requires either -e or -d flag")]
+    WrapMissingFlag,
 }
 
 pub type Result<T> = std::result::Result<T, DendecError>;
-
